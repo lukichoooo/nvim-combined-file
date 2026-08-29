@@ -9,7 +9,7 @@ local defaults = {
 	},
 }
 
-local function run_command(cmd, success_msg, fail_msg)
+local function run_command(cmd, success_msg, fail_msg, term)
 	vim.fn.jobstart({ "sh", "-c", cmd }, {
 		on_exit = function(_, exit_code)
 			if exit_code == 0 then
@@ -18,6 +18,7 @@ local function run_command(cmd, success_msg, fail_msg)
 				vim.notify(fail_msg, vim.log.levels.ERROR)
 			end
 		end,
+		term = term,
 	})
 end
 
@@ -56,8 +57,13 @@ local function run_cpp()
 	if not current_file then
 		return
 	end
-	local cmd = string.format([[./%s.out]], vim.fn.fnamemodify(current_file, ":r"))
-	run_command(cmd, "Ran " .. current_file, "Failed to run " .. current_file)
+
+	local exe = string.format("./%s.out", vim.fn.fnamemodify(current_file, ":r"))
+
+	vim.ui.input({ prompt = "Input: " }, function(input)
+		local cmd = string.format("printf '%%s\\n' %s | %s", vim.fn.shellescape(input), exe)
+		run_command(cmd, "Ran " .. current_file, "Failed to run " .. current_file, true)
+	end)
 end
 
 function M.setup(opts)

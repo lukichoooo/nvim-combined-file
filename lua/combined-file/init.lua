@@ -32,6 +32,7 @@ local function get_current_cpp_file()
 		vim.notify("Active buffer must be a .cpp file", vim.log.levels.WARN)
 		return
 	end
+	return current_file
 end
 
 local function bundle_files()

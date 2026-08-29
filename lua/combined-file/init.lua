@@ -7,14 +7,6 @@ local defaults = {
 	},
 }
 
-local function register_which_key(prefix)
-	local ok, wk = pcall(require, "which-key")
-	if not ok then
-		return
-	end
-	wk.add({ { prefix, group = "Competitive Programming" } })
-end
-
 local function bundle_files()
 	local current_file = vim.api.nvim_buf_get_name(0)
 	if vim.fn.fnamemodify(current_file, ":e") ~= "cpp" then
@@ -40,9 +32,6 @@ end
 
 function M.setup(opts)
 	opts = vim.tbl_deep_extend("force", defaults, opts or {})
-
-	local prefix = opts.keys.check:match("^(<.*>%w+)") or opts.keys.check:sub(1, -2)
-	register_which_key(prefix)
 
 	vim.keymap.set("n", opts.keys.check, function()
 		print("file generator is working!!!")

@@ -4,30 +4,60 @@ local defaults = {
 	keys = {
 		check = "<Leader>cpc",
 		generate = "<Leader>cpg",
+		build = "<Leader>cpb",
+		run = "<Leader>cpr",
 	},
 }
 
-local function bundle_files()
+local function run_command(cmd, success_msg, fail_msg)
+	vim.fn.jobstart({ "sh", "-c", cmd }, {
+		on_exit = function(_, exit_code)
+			if exit_code == 0 then
+				vim.notify(success_msg, vim.log.levels.INFO)
+			else
+				vim.notify(fail_msg, vim.log.levels.ERROR)
+			end
+		end,
+	})
+end
+
+local function get_current_cpp_file()
 	local current_file = vim.api.nvim_buf_get_name(0)
+	if not current_file then
+		vim.notify("Can't get current cpp file", vim.log.levels.WARN)
+		return
+	end
 	if vim.fn.fnamemodify(current_file, ":e") ~= "cpp" then
 		vim.notify("Active buffer must be a .cpp file", vim.log.levels.WARN)
 		return
 	end
+end
 
-	-- 1. Cat all local .h files + current .cpp file
-	-- 2. Strip lines matching #include "..." for local headers
-	-- 3. Output to submit.cpp
+local function bundle_files()
+	local current_file = get_current_cpp_file()
+	if not current_file then
+		return
+	end
 	local cmd = string.format([[cat *.h "%s" 2>/dev/null | sed -E '/#include *"[^"]+"/d' > submit.cpp]], current_file)
+	run_command(cmd, "Generated submit.cpp", "Failed to generate submit.cpp")
+end
 
-	vim.fn.jobstart({ "sh", "-c", cmd }, {
-		on_exit = function(_, exit_code)
-			if exit_code == 0 then
-				vim.notify("Generated submit.cpp", vim.log.levels.INFO)
-			else
-				vim.notify("Failed to generate submit.cpp", vim.log.levels.ERROR)
-			end
-		end,
-	})
+local function build_cpp()
+	local current_file = get_current_cpp_file()
+	if not current_file then
+		return
+	end
+	local cmd = string.format([[g++ -o %s.out %s 2>/dev/null]], vim.fn.fnamemodify(current_file, ":r"), current_file)
+	run_command(cmd, "Compiled " .. current_file, "Failed to compile " .. current_file)
+end
+
+local function run_cpp()
+	local current_file = get_current_cpp_file()
+	if not current_file then
+		return
+	end
+	local cmd = string.format([[./%s.out]], vim.fn.fnamemodify(current_file, ":r"))
+	run_command(cmd, "Ran " .. current_file, "Failed to run " .. current_file)
 end
 
 function M.setup(opts)
@@ -39,6 +69,24 @@ function M.setup(opts)
 
 	vim.keymap.set("n", opts.keys.generate, bundle_files, {
 		desc = "Bundle C++ files into submit.cpp",
+		silent = true,
+		noremap = true,
+	})
+
+	vim.keymap.set("n", opts.keys.build, build_cpp, {
+		desc = "Bundle C++ files into submit.cpp",
+		silent = true,
+		noremap = true,
+	})
+
+	vim.keymap.set("n", opts.keys.build, build_cpp, {
+		desc = "Build C++ file",
+		silent = true,
+		noremap = true,
+	})
+
+	vim.keymap.set("n", opts.keys.run, run_cpp, {
+		desc = "Run C++ file",
 		silent = true,
 		noremap = true,
 	})

@@ -70,15 +70,30 @@ local function run_cpp()
 			return
 		end
 
-		local cmd
-		if input == "" then
-			cmd = vim.fn.shellescape(exe)
-		else
-			-- Use printf '%%s\n' so string.format yields: printf '%s\n' "input"
-			cmd = string.format("printf '%%s\\n' %s | %s", vim.fn.shellescape(input), vim.fn.shellescape(exe))
+		local dir = vim.fn.fnamemodify(current_file, ":h")
+		local input_file = dir .. "/input.txt"
+		local output_file = dir .. "/output.txt"
+
+		-- Write prompt input into input.txt
+		local f = io.open(input_file, "w")
+		if f then
+			f:write(input .. "\n")
+			f:close()
 		end
 
+		-- Build redirection command: ./file.out < input.txt > output.txt
+		local cmd = string.format(
+			"%s < %s > %s",
+			vim.fn.shellescape(exe),
+			vim.fn.shellescape(input_file),
+			vim.fn.shellescape(output_file)
+		)
+
 		run_command(cmd, "Ran " .. current_file, "Failed to run " .. current_file, true)
+
+		-- Open input.txt and output.txt side-by-side
+		vim.cmd("vsplit " .. vim.fn.fnameescape(input_file))
+		vim.cmd("split " .. vim.fn.fnameescape(output_file))
 	end)
 end
 

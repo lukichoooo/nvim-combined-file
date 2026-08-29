@@ -59,10 +59,24 @@ local function run_cpp()
 		return
 	end
 
-	local exe = string.format("./%s.out", vim.fn.fnamemodify(current_file, ":r"))
+	local exe = vim.fn.fnamemodify(current_file, ":r") .. ".out"
+	if vim.fn.executable(exe) ~= 1 then
+		vim.notify("Executable not found. Compile first!", vim.log.levels.ERROR)
+		return
+	end
 
-	vim.ui.input({ prompt = "Input: " }, function(input)
-		local cmd = string.format("printf '%%s\\n' %s | %s", vim.fn.shellescape(input), exe)
+	vim.ui.input({ prompt = "Input (optional): " }, function(input)
+		if input == nil then
+			return
+		end
+
+		local cmd
+		if input == "" then
+			cmd = vim.fn.shellescape(exe)
+		else
+			cmd = string.format("printf '%%s\\n' %s | %s", vim.fn.shellescape(input), vim.fn.shellescape(exe))
+		end
+
 		run_command(cmd, "Ran " .. current_file, "Failed to run " .. current_file, true)
 	end)
 end

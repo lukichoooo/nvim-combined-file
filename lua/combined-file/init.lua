@@ -2,8 +2,8 @@ local M = {}
 
 local defaults = {
 	keys = {
-		check = "<Leader>gc",
-		generate = "<Leader>gg",
+		check = "<Leader>cpc",
+		generate = "<Leader>cpg",
 	},
 }
 

@@ -69,44 +69,54 @@ local function run_cpp()
 	local input_file = dir .. "/input.txt"
 	local output_file = dir .. "/output.txt"
 
-	-- Ensure input.txt and output.txt exist without overwriting existing data
-	if vim.fn.filereadable(input_file) == 0 then
-		vim.fn.writefile({}, input_file)
-	end
-	if vim.fn.filereadable(output_file) == 0 then
-		vim.fn.writefile({}, output_file)
-	end
-
-	-- Save all open buffers first (so edits in input.txt are read by the executable)
-	vim.cmd("silent! wa")
-
-	-- Run silently in background using system() instead of opening terminal buffer
-	local cmd = string.format(
-		"%s < %s > %s",
-		vim.fn.shellescape(exe),
-		vim.fn.shellescape(input_file),
-		vim.fn.shellescape(output_file)
-	)
-	vim.fn.system(cmd)
-
-	-- Open or focus input.txt and output.txt splits
-	local function open_or_focus(file_path)
-		local win = vim.fn.bufwinnr(file_path)
-		if win ~= -1 then
-			vim.cmd(win .. "wincmd w")
-		else
-			vim.cmd("split " .. vim.fn.fnameescape(file_path))
+	-- Prompt for input first
+	vim.ui.input({ prompt = "Input (optional): " }, function(input)
+		if input == nil then
+			return -- Cancelled with Esc
 		end
-	end
 
-	-- Arrange splits: side-by-side splits for input/output
-	local main_win = vim.api.nvim_get_current_win()
-	open_or_focus(input_file)
-	open_or_focus(output_file)
+		-- Save the prompted input to input.txt
+		local f = io.open(input_file, "w")
+		if f then
+			f:write(input .. "\n")
+			f:close()
+		end
 
-	-- Refresh output buffer from disk to display new results immediately
-	vim.cmd("checktime")
-	vim.notify("Ran successfully!", vim.log.levels.INFO)
+		-- Ensure output.txt exists
+		if vim.fn.filereadable(output_file) == 0 then
+			vim.fn.writefile({}, output_file)
+		end
+
+		-- Save buffers (including current file/input.txt)
+		vim.cmd("silent! wa")
+
+		-- Run binary silently using system()
+		local cmd = string.format(
+			"%s < %s > %s",
+			vim.fn.shellescape(exe),
+			vim.fn.shellescape(input_file),
+			vim.fn.shellescape(output_file)
+		)
+		vim.fn.system(cmd)
+
+		-- Smart focus / open splits for input and output
+		local function open_or_focus(file_path, split_cmd)
+			local buf_num = vim.fn.bufnr(file_path)
+			local win = vim.fn.bufwinnr(buf_num)
+			if win ~= -1 then
+				vim.cmd(win .. "wincmd w")
+			else
+				vim.cmd(split_cmd .. " " .. vim.fn.fnameescape(file_path))
+			end
+		end
+
+		open_or_focus(input_file, "vsplit")
+		open_or_focus(output_file, "split")
+
+		-- Reload output buffer content from disk
+		vim.cmd("checktime")
+		vim.notify("Ran successfully!", vim.log.levels.INFO)
+	end)
 end
 
 function M.setup(opts)

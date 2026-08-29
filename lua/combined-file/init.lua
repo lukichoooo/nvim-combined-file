@@ -69,7 +69,7 @@ local function run_cpp()
 	local input_file = dir .. "/input.txt"
 	local output_file = dir .. "/output.txt"
 
-	-- Helper to open or focus split
+	-- Helper function to focus or open a split window
 	local function focus_or_open(file_path, split_cmd)
 		local bufnr = vim.fn.bufnr(file_path)
 		local winnr = vim.fn.bufwinnr(bufnr)
@@ -80,25 +80,38 @@ local function run_cpp()
 		end
 	end
 
-	-- 1. Ensure splits exist (vsplit input.txt on right, split output.txt below input)
+	-- 1. Open splits for input and output files
 	focus_or_open(input_file, "vsplit")
 	focus_or_open(output_file, "split")
 
-	-- 2. Save all open buffers (flushes typed input in input.txt to disk)
+	-- 2. Force-save all buffers so changes in input.txt write to disk
 	vim.cmd("silent! wa")
 
-	-- 3. Execute background binary redirection (no command bar or terminal window)
-	local cmd = string.format(
-		"%s < %s > %s",
-		vim.fn.shellescape(exe),
-		vim.fn.shellescape(input_file),
-		vim.fn.shellescape(output_file)
-	)
-	vim.fn.system(cmd)
+	-- 3. Read input text directly from input.txt file
+	local input_bufnr = vim.fn.bufnr(input_file)
+	local input_lines = vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false)
+	local input_data = table.concat(input_lines, "\n") .. "\n"
 
-	-- 4. Reload output buffer from disk to show updated execution output
-	vim.cmd("checktime")
-	vim.notify("Ran successfully!", vim.log.levels.INFO)
+	-- 4. Run binary synchronously passing input via standard stdin
+	local res = vim.fn.system(vim.fn.shellescape(exe), input_data)
+
+	-- 5. Write binary output directly into the output.txt buffer
+	local output_bufnr = vim.fn.bufnr(output_file)
+	local output_lines = vim.split(res, "\n", { trimempty = false })
+
+	-- If output ends with trailing newline, strip the trailing empty string line
+	if output_lines[#output_lines] == "" then
+		table.remove(output_lines)
+	end
+
+	vim.api.nvim_buf_set_lines(output_bufnr, 0, -1, false, output_lines)
+
+	-- Write the output buffer back to disk
+	vim.api.nvim_buf_call(output_bufnr, function()
+		vim.cmd("silent! w")
+	end)
+
+	vim.notify("Executed successfully!", vim.log.levels.INFO)
 end
 
 function M.setup(opts)

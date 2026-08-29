@@ -35,9 +35,13 @@ function M.setup(opts)
 
 	vim.keymap.set("n", opts.keys.check, function()
 		print("file generator is working!!!")
-	end, { desc = "Check File Generator status" })
+	end, { desc = "Check file generator status" })
 
-	vim.keymap.set("n", opts.keys.generate, bundle_files, { desc = "Bundle into submit.cpp" })
+	vim.keymap.set("n", opts.keys.generate, bundle_files, {
+		desc = "Bundle C++ files into submit.cpp",
+		silent = true,
+		noremap = true,
+	})
 end
 
 return M

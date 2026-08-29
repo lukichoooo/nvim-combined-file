@@ -74,7 +74,8 @@ local function run_cpp()
 		if input == "" then
 			cmd = vim.fn.shellescape(exe)
 		else
-			cmd = string.format("echo %s | %s", vim.fn.shellescape(input), vim.fn.shellescape(exe))
+			-- Use printf '%%s\n' so string.format yields: printf '%s\n' "input"
+			cmd = string.format("printf '%%s\\n' %s | %s", vim.fn.shellescape(input), vim.fn.shellescape(exe))
 		end
 
 		run_command(cmd, "Ran " .. current_file, "Failed to run " .. current_file, true)

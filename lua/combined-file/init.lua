@@ -69,49 +69,57 @@ local function run_cpp()
 	local input_file = dir .. "/input.txt"
 	local output_file = dir .. "/output.txt"
 
-	-- Helper function to focus or open a split window
-	local function focus_or_open(file_path, split_cmd)
-		local bufnr = vim.fn.bufnr(file_path)
-		local winnr = vim.fn.bufwinnr(bufnr)
-		if winnr ~= -1 then
-			vim.cmd(winnr .. "wincmd w")
-		else
-			vim.cmd(split_cmd .. " " .. vim.fn.fnameescape(file_path))
-		end
-	end
-
-	-- 1. Open splits for input and output files
-	focus_or_open(input_file, "vsplit")
-	focus_or_open(output_file, "split")
-
-	-- 2. Force-save all buffers so changes in input.txt write to disk
-	vim.cmd("silent! wa")
-
-	-- 3. Read input text directly from input.txt file
+	-- 1. Open input.txt in a vertical split
 	local input_bufnr = vim.fn.bufnr(input_file)
-	local input_lines = vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false)
-	local input_data = table.concat(input_lines, "\n") .. "\n"
-
-	-- 4. Run binary synchronously passing input via standard stdin
-	local res = vim.fn.system(vim.fn.shellescape(exe), input_data)
-
-	-- 5. Write binary output directly into the output.txt buffer
-	local output_bufnr = vim.fn.bufnr(output_file)
-	local output_lines = vim.split(res, "\n", { trimempty = false })
-
-	-- If output ends with trailing newline, strip the trailing empty string line
-	if output_lines[#output_lines] == "" then
-		table.remove(output_lines)
+	local input_winnr = vim.fn.bufwinnr(input_bufnr)
+	if input_winnr ~= -1 then
+		vim.cmd(input_winnr .. "wincmd w")
+	else
+		vim.cmd("vsplit " .. vim.fn.fnameescape(input_file))
+		input_bufnr = vim.fn.bufnr(input_file)
 	end
 
-	vim.api.nvim_buf_set_lines(output_bufnr, 0, -1, false, output_lines)
+	-- 2. Define execution logic to run after saving input.txt
+	local function execute_cpp()
+		local input_lines = vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false)
+		local input_data = table.concat(input_lines, "\n") .. "\n"
 
-	-- Write the output buffer back to disk
-	vim.api.nvim_buf_call(output_bufnr, function()
-		vim.cmd("silent! w")
-	end)
+		local res = vim.fn.system(vim.fn.shellescape(exe), input_data)
 
-	vim.notify("Executed successfully!", vim.log.levels.INFO)
+		-- Focus or open output.txt split
+		local output_bufnr = vim.fn.bufnr(output_file)
+		local output_winnr = vim.fn.bufwinnr(output_bufnr)
+		if output_winnr ~= -1 then
+			vim.cmd(output_winnr .. "wincmd w")
+		else
+			vim.cmd("split " .. vim.fn.fnameescape(output_file))
+			output_bufnr = vim.fn.bufnr(output_file)
+		end
+
+		local output_lines = vim.split(res, "\n", { trimempty = false })
+		if output_lines[#output_lines] == "" then
+			table.remove(output_lines)
+		end
+
+		vim.api.nvim_buf_set_lines(output_bufnr, 0, -1, false, output_lines)
+
+		vim.api.nvim_buf_call(output_bufnr, function()
+			vim.cmd("silent! w")
+		end)
+
+		vim.notify("Executed successfully!", vim.log.levels.INFO)
+	end
+
+	-- 3. Attach a one-time AutoCommand on save (BufWritePost) for input.txt
+	local group = vim.api.nvim_create_augroup("RunCppOnSave_" .. input_bufnr, { clear = true })
+	vim.api.nvim_create_autocmd("BufWritePost", {
+		group = group,
+		buffer = input_bufnr,
+		once = true,
+		callback = execute_cpp,
+	})
+
+	vim.notify("Edit input.txt and save (:w) to run.", vim.log.levels.INFO)
 end
 
 function M.setup(opts)

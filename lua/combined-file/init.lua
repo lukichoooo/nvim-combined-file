@@ -41,6 +41,7 @@ local function bundle_files()
 		return
 	end
 	local cmd = string.format([[cat *.h "%s" 2>/dev/null | sed -E '/#include *"[^"]+"/d' > submit.cpp]], current_file)
+
 	run_command(cmd, "Generated submit.cpp", "Failed to generate submit.cpp")
 end
 

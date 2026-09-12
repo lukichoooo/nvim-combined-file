@@ -49,7 +49,8 @@ local function build_cpp()
 	if not current_file then
 		return
 	end
-	local cmd = string.format([[g++ -o %s.out %s 2>/dev/null]], vim.fn.fnamemodify(current_file, ":r"), current_file)
+	local cmd =
+		string.format([[g++ -std=c++20 -o %s.out %s 2>/dev/null]], vim.fn.fnamemodify(current_file, ":r"), current_file)
 	run_command(cmd, "Compiled " .. current_file, "Failed to compile " .. current_file)
 end
 

@@ -36,10 +36,33 @@ local function explain_exit(code)
 	return "exit " .. code
 end
 
--- Show full output in quickfix, open it on failure.
-local function to_quickfix(lines, title)
-	vim.fn.setqflist({}, " ", { lines = lines, title = title })
-	vim.cmd("copen")
+--- Collects raw job chunks into buffer-safe lines.
+--- Job callbacks may hand us strings with embedded "\n", "\r" or NULs,
+--- all of which `nvim_buf_set_lines` / quickfix reject.
+local Output = {}
+Output.__index = Output
+
+function Output.new()
+	return setmetatable({ items = {} }, Output)
+end
+
+function Output:add(data)
+	for _, chunk in ipairs(data or {}) do
+		for _, part in ipairs(vim.split(chunk, "\n", { plain = true })) do
+			part = part:gsub("\r", ""):gsub("%z", "")
+			if part ~= "" then
+				table.insert(self.items, part)
+			end
+		end
+	end
+end
+
+function Output:lines()
+	return self.items
+end
+
+function Output:is_empty()
+	return #self.items == 0
 end
 
 -- First N lines for the notify preview.
@@ -55,28 +78,56 @@ local function preview(lines, n)
 	return table.concat(out, "\n")
 end
 
+-- Show full output in quickfix, open it on failure.
+local function to_quickfix(lines, title)
+	vim.fn.setqflist({}, " ", { lines = lines, title = title })
+	vim.cmd("copen")
+end
+
+-- Focus existing split for {file} or open it with {split_cmd}.
+local function goto_output(output_file, split_cmd)
+	local bufnr = vim.fn.bufnr(output_file)
+	if vim.fn.bufwinnr(bufnr) ~= -1 then
+		vim.cmd(vim.fn.bufwinnr(bufnr) .. "wincmd w")
+	else
+		vim.cmd(split_cmd .. " " .. vim.fn.fnameescape(output_file))
+		bufnr = vim.fn.bufnr(output_file)
+	end
+	return bufnr
+end
+
+-- Write lines to a file buffer. Never passes newlines / empty list to the API.
+local function write_output(output_file, split_cmd, lines)
+	local bufnr = goto_output(output_file, split_cmd)
+	local safe = #lines > 0 and lines or { "" }
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, safe)
+	vim.api.nvim_buf_call(bufnr, function()
+		vim.cmd("silent! w")
+	end)
+end
+
 -- Run a shell command, capture stderr, notify + quickfix on failure.
 local function run_command(cmd, opts)
-	local err = {}
+	local err = Output.new()
 	vim.fn.jobstart({ "sh", "-c", cmd }, {
 		stderr_buffered = true,
 		on_stderr = function(_, data)
-			for _, line in ipairs(data) do
-				if line ~= "" then
-					table.insert(err, line)
-				end
-			end
+			err:add(data)
 		end,
 		on_exit = function(_, code)
 			if code == 0 then
 				notify(opts.success, vim.log.levels.INFO)
 			else
-				if #err == 0 then
-					err = { "(no output, " .. explain_exit(code) .. ")" }
+				local lines = err:lines()
+				if #lines == 0 then
+					lines = { "(no output, " .. explain_exit(code) .. ")" }
 				end
-				notify(opts.title .. " failed (" .. explain_exit(code) .. "):\n" .. preview(err), vim.log.levels.ERROR)
+				notify(
+					opts.title .. " failed (" .. explain_exit(code) .. "):\n" .. preview(lines),
+					vim.log.levels.ERROR
+				)
 				vim.schedule(function()
-					to_quickfix(err, opts.title)
+					to_quickfix(lines, opts.title)
 				end)
 			end
 		end,
@@ -125,16 +176,18 @@ local function build_cpp()
 	)
 end
 
--- Focus existing split for {file} or open it with {cmd} (vsplit/split).
-local function goto_output(output_file, split_cmd)
-	local bufnr = vim.fn.bufnr(output_file)
-	if vim.fn.bufwinnr(bufnr) ~= -1 then
-		vim.cmd(vim.fn.bufwinnr(bufnr) .. "wincmd w")
+local function report_run(exe, code, elapsed, stdout_lines, stderr_lines)
+	write_output(vim.fn.fnamemodify(exe, ":h") .. "/output.txt", "split", stdout_lines)
+
+	if code == 0 and #stderr_lines == 0 then
+		notify("Ran " .. vim.fn.fnamemodify(exe, ":t") .. " (" .. elapsed .. ")", vim.log.levels.INFO)
 	else
-		vim.cmd(split_cmd .. " " .. vim.fn.fnameescape(output_file))
-		bufnr = vim.fn.bufnr(output_file)
+		local detail = #stderr_lines > 0 and ("\n" .. preview(stderr_lines)) or ""
+		notify("Ran with " .. explain_exit(code) .. " in " .. elapsed .. detail, vim.log.levels.ERROR)
+		if #stderr_lines > 0 then
+			to_quickfix(stderr_lines, "run " .. vim.fn.fnamemodify(exe, ":t"))
+		end
 	end
-	return bufnr
 end
 
 local function run_cpp()
@@ -151,7 +204,6 @@ local function run_cpp()
 
 	local dir = vim.fn.fnamemodify(current_file, ":h")
 	local input_file = dir .. "/input.txt"
-	local output_file = dir .. "/output.txt"
 
 	-- Open input.txt in a vertical split.
 	local input_bufnr = vim.fn.bufnr(input_file)
@@ -166,45 +218,21 @@ local function run_cpp()
 		local input_lines = vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false)
 		local input_data = table.concat(input_lines, "\n") .. "\n"
 
-		local stdout, stderr = {}, {}
+		local stdout, stderr = Output.new(), Output.new()
 		local start = vim.loop.hrtime()
 		local jobid = vim.fn.jobstart({ exe }, {
 			stdout_buffered = true,
 			stderr_buffered = true,
 			on_stdout = function(_, data)
-				for _, line in ipairs(data) do
-					if line ~= "" then
-						table.insert(stdout, line)
-					end
-				end
+				stdout:add(data)
 			end,
 			on_stderr = function(_, data)
-				for _, line in ipairs(data) do
-					if line ~= "" then
-						table.insert(stderr, line)
-					end
-				end
+				stderr:add(data)
 			end,
 			on_exit = function(_, code)
-				local ms = (vim.loop.hrtime() - start) / 1e6
-				local time = string.format("%.0fms", ms)
+				local elapsed = string.format("%.0fms", (vim.loop.hrtime() - start) / 1e6)
 				vim.schedule(function()
-					local out_bufnr = goto_output(output_file, "split")
-					vim.api.nvim_buf_set_lines(out_bufnr, 0, -1, false, stdout)
-					vim.api.nvim_buf_call(out_bufnr, function()
-						vim.cmd("silent! w")
-					end)
-
-					if code == 0 and #stderr == 0 then
-						notify("Ran " .. vim.fn.fnamemodify(exe, ":t") .. " (" .. time .. ")", vim.log.levels.INFO)
-					else
-						local reason = explain_exit(code)
-						local detail = #stderr > 0 and ("\n" .. preview(stderr)) or ""
-						notify("Ran with " .. reason .. " in " .. time .. detail, vim.log.levels.ERROR)
-						if #stderr > 0 then
-							to_quickfix(stderr, "run " .. vim.fn.fnamemodify(exe, ":t"))
-						end
-					end
+					report_run(exe, code, elapsed, stdout:lines(), stderr:lines())
 				end)
 			end,
 		})

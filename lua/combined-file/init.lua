@@ -1,13 +1,39 @@
 local M = {}
 
 local defaults = {
+	std = "23",
+	stds = { "17", "20", "23" },
 	keys = {
-		check = "<Leader>cpc",
+		version = "<Leader>cpc",
 		generate = "<Leader>cpg",
 		build = "<Leader>cpb",
 		run = "<Leader>cpr",
 	},
 }
+
+-- Selected standard, used by build. Changed via the version menu (<Leader>cpc).
+M.std = defaults.std
+M.stds = defaults.stds
+
+-- Accepts "20", "c++20", "C++17" -> "20".
+local function normalize_std(s)
+	return tostring(s):lower():gsub("^c%+%+", "")
+end
+
+-- Menu to pick the C++ standard for subsequent builds.
+function M.select_std()
+	vim.ui.select(M.stds, {
+		prompt = "C++ standard:",
+		format_item = function(s)
+			return "C++" .. s .. (s == M.std and "  (current)" or "")
+		end,
+	}, function(choice)
+		if choice then
+			M.std = normalize_std(choice)
+			vim.notify("C++ standard: C++" .. M.std, vim.log.levels.INFO)
+		end
+	end)
+end
 
 -- Short notify; always scheduled so it's safe to call from job callbacks.
 local function notify(msg, level)
@@ -166,14 +192,15 @@ local function build_cpp()
 	end
 	local out = vim.fn.fnamemodify(current_file, ":r") .. ".out"
 	local cmd = string.format(
-		"g++ -std=c++20 -Wall -Wextra -o %s %s",
+		"g++ -std=c++%s -Wall -Wextra -o %s %s",
+		M.std,
 		vim.fn.shellescape(out),
 		vim.fn.shellescape(current_file)
 	)
-	run_command(
-		cmd,
-		{ success = "Compiled " .. current_file, title = "g++ " .. vim.fn.fnamemodify(current_file, ":t") }
-	)
+	run_command(cmd, {
+		success = "Compiled " .. current_file .. " (C++" .. M.std .. ")",
+		title = "g++ " .. vim.fn.fnamemodify(current_file, ":t"),
+	})
 end
 
 local function report_run(exe, code, elapsed, stdout_lines, stderr_lines)
@@ -260,9 +287,16 @@ end
 function M.setup(opts)
 	opts = vim.tbl_deep_extend("force", defaults, opts or {})
 
-	vim.keymap.set("n", opts.keys.check, function()
-		print("file generator is working!!!")
-	end, { desc = "Check file generator status" })
+	M.std = normalize_std(opts.std or M.std)
+	M.stds = opts.stds or M.stds
+
+	-- `keys.check` is the pre-version-menu name of this key; honor it if set.
+	local version_key = opts.keys.version or opts.keys.check
+	vim.keymap.set("n", version_key, M.select_std, {
+		desc = "Select C++ standard",
+		silent = true,
+		noremap = true,
+	})
 
 	vim.keymap.set("n", opts.keys.generate, bundle_files, {
 		desc = "Bundle C++ files into submit.cpp",

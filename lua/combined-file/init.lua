@@ -204,7 +204,7 @@ local function build_cpp()
 end
 
 local function report_run(exe, code, elapsed, stdout_lines, stderr_lines)
-	write_output(vim.fn.fnamemodify(exe, ":h") .. "/output.txt", "split", stdout_lines)
+	write_output(vim.fn.fnamemodify(exe, ":h") .. "/.output.txt", "split", stdout_lines)
 
 	if code == 0 and #stderr_lines == 0 then
 		notify("Ran " .. vim.fn.fnamemodify(exe, ":t") .. " (" .. elapsed .. ")", vim.log.levels.INFO)
@@ -230,7 +230,7 @@ local function run_cpp()
 	end
 
 	local dir = vim.fn.fnamemodify(current_file, ":h")
-	local input_file = dir .. "/input.txt"
+	local input_file = dir .. "/.input.txt"
 
 	-- Open input.txt in a vertical split.
 	local input_bufnr = vim.fn.bufnr(input_file)
